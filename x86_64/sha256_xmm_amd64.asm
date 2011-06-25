@@ -19,9 +19,9 @@ global CalcSha256_x64
 ;	CalcSha256	hash(rdi), data(rsi), init(rdx)
 CalcSha256_x64:	
 
-	push	rbx
-
 LAB_NEXT_NONCE:
+	mov	r10, 64*4 ;rcx is # of SHA-2 rounds
+	
 	mov	r11, data
 ;	mov	rax, pnonce
 ;	mov	eax, [rax]
@@ -33,15 +33,15 @@ LAB_NEXT_NONCE:
 ;	inc	eax
 ;	mov	[rbx+3*16+12], eax
 
-	mov	rcx, 64*4 ;rcx is # of SHA-2 rounds
-	mov	rax, 16*4 ;rax is where we expand to
-
 LAB_SHA:
-	push	rcx
-	lea	rcx, qword [r11+rcx*4]
-	lea	r11, qword [r11+rax*4]
+	lea	rcx, qword [data+64*4*4]
+	lea	r11, qword [data+16*4*4]
+
+ALIGN 16
 LAB_CALC:
 	movdqa	xmm0, [r11-15*16]
+	movdqa  xmm3, [r11-2*16]
+	nop
 	movdqa	xmm2, xmm0					; (Rotr32(w_15, 7) ^ Rotr32(w_15, 18) ^ (w_15 >> 3))
 	psrld	xmm0, 3
 	movdqa	xmm1, xmm0
@@ -56,7 +56,6 @@ LAB_CALC:
 
 	paddd	xmm0, [r11-16*16]
 
-	movdqa	xmm3, [r11-2*16]
 	movdqa	xmm2, xmm3					; (Rotr32(w_2, 17) ^ Rotr32(w_2, 19) ^ (w_2 >> 10))
 	psrld	xmm3, 10
 	movdqa	xmm1, xmm3
@@ -75,9 +74,9 @@ LAB_CALC:
 	add	r11, 16
 	cmp	r11, rcx
 	jb	LAB_CALC
-	pop	rcx
+	mov rcx, r10
 
-	mov rax, 0
+	xor rax, rax
 
 ; Load the init values of the message into the hash.
 
@@ -98,19 +97,21 @@ LAB_CALC:
 	movd	xmm10, dword [rdx+7*4]		; xmm10 == h
 	pshufd  xmm10, xmm10, 0
 
+ALIGN 16
 LAB_LOOP:
 
 ;; T t1 = h + (Rotr32(e, 6) ^ Rotr32(e, 11) ^ Rotr32(e, 25)) + ((e & f) ^ AndNot(e, g)) + Expand32<T>(g_sha256_k[j]) + w[j]
 
-	movdqa	xmm6, [rsi+rax*4]
-	paddd	xmm6, g_4sha256_k[rax*4]
-	add	rax, 4
-
-	paddd	xmm6, xmm10	; +h
+	movdqa	xmm6, [data+rax*4]
 
 	movdqa	xmm1, xmm0
 	movdqa	xmm2, xmm9
 	pandn	xmm1, xmm2	; ~e & g
+
+	paddd	xmm6, g_4sha256_k[rax*4]
+	add	rax, 4
+
+	paddd	xmm6, xmm10	; +h
 
 	movdqa	xmm10, xmm2	; h = g
 	movdqa	xmm2, xmm8	; f
@@ -166,9 +167,9 @@ LAB_LOOP:
 	pslld	xmm2, 11
 	pxor	xmm7, xmm2
 	paddd	xmm7, xmm6	; a = t1 + (Rotr32(a, 2) ^ Rotr32(a, 13) ^ Rotr32(a, 22)) + ((a & c) ^ (a & d) ^ (c & d));	
-
-	cmp	rax, rcx
-	jb	LAB_LOOP
+    
+	test rax, r10       ; was cmp - as we're iterating up to a power of 2 we can test
+	je	LAB_LOOP        ; was 
 
 ; Finished the 64 rounds, calculate hash and save
 
@@ -215,5 +216,4 @@ debug_me:
 	movdqa	[rdi+7*16], xmm10
 
 LAB_RET:
-	pop	rbx
 	ret

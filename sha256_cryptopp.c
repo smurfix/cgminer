@@ -10,7 +10,7 @@
 
 typedef uint32_t word32;
 
-static word32 rotrFixed(word32 word, unsigned int shift)
+static word32 rotrFixed(const word32 word, const unsigned int shift)
 {
 	return (word >> shift) | (word << (32 - shift));
 }
@@ -50,7 +50,10 @@ static const word32 SHA256_K[64] = {
 #define g(i) T[(6-i)&7]
 #define h(i) T[(7-i)&7]
 
-#define R(i) h(i)+=S1(e(i))+Ch(e(i),f(i),g(i))+SHA256_K[i+j]+(j?blk2(i):blk0(i));\
+#define R(i) h(i)+=S1(e(i))+Ch(e(i),f(i),g(i))+SHA256_K[i+j]+(blk2(i));\
+	d(i)+=h(i);h(i)+=S0(a(i))+Maj(a(i),b(i),c(i))
+	
+#define R_0(i) h(i)+=S1(e(i))+Ch(e(i),f(i),g(i))+SHA256_K[i+j]+(blk0(i));\
 	d(i)+=h(i);h(i)+=S0(a(i))+Maj(a(i),b(i),c(i))
 
 // for SHA256
@@ -63,12 +66,17 @@ static void SHA256_Transform(word32 *state, const word32 *data)
 {
 	word32 W[16] = { };
 	word32 T[8];
-	unsigned int j;
+	unsigned int j = 0;
 
     /* Copy context->state[] to working vars */
 	memcpy(T, state, sizeof(T));
     /* 64 operations, partially loop unrolled */
-	for (j=0; j<64; j+=16)
+	R_0( 0); R_0( 1); R_0( 2); R_0( 3);
+	R_0( 4); R_0( 5); R_0( 6); R_0( 7);
+	R_0( 8); R_0( 9); R_0(10); R_0(11);
+	R_0(12); R_0(13); R_0(14); R_0(15);
+	
+	for (j=16; j<64; j+=16)
 	{
 		R( 0); R( 1); R( 2); R( 3);
 		R( 4); R( 5); R( 6); R( 7);
@@ -105,6 +113,11 @@ bool scanhash_cryptopp(int thr_id, const unsigned char *midstate,
 	unsigned long stat_ctr = 0;
 
 	work_restart[thr_id].restart = 0;
+	
+	if (n == max_nonce) {
+	    *hashes_done = 0;
+	    return false;
+    }
 
 	while (1) {
 		n++;
@@ -120,7 +133,7 @@ bool scanhash_cryptopp(int thr_id, const unsigned char *midstate,
 			return true;
 		}
 
-		if ((n >= max_nonce) || work_restart[thr_id].restart) {
+		if ((n == max_nonce) || work_restart[thr_id].restart) {
 			*hashes_done = stat_ctr;
 			return false;
 		}
