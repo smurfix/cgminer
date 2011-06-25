@@ -7,4 +7,4 @@ ADDRESS=1G2dz821NoqXwnohUFGFLZLfy8No6Efrs6
 # the miner's default (c) otherwise.
 #ALGORITHM=sse2_64
 #
-DAEMON_ARGS="--url http://mining.eligius.st:8337 --userpass $ADDRESS:x"
+DAEMON_ARGS="--url http://mining.eligius.st:8337 --userpass $ADDRESS:x --retries -1"
