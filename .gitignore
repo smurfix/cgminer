@@ -31,3 +31,11 @@ mingw32-config.cache
 ext_deps
 config.h.in
 config.h
+api-example
+ccan/libccan.a
+lib/arg-nonnull.h
+lib/c++defs.h
+lib/libgnu.a
+lib/signal.h
+lib/string.h
+lib/warn-on-use.h
