@@ -227,6 +227,8 @@ bool opt_noadl;
 char *opt_api_description = PACKAGE_STRING;
 int opt_api_port = 4028;
 bool opt_api_listen = false;
+bool opt_api_listen_v4 = false;
+bool opt_api_listen_v6 = false;
 bool opt_api_network = false;
 bool opt_delaynet = false;
 
@@ -1533,6 +1535,12 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITHOUT_ARG("--api-network",
 			opt_set_bool, &opt_api_network,
 			"Allow API (if enabled) to listen on/for any address, default: only 127.0.0.1"),
+	OPT_WITHOUT_ARG("--api-ipv4",
+			opt_set_bool, &opt_api_listen_v4,
+			"Limit API (if enabled) to only listen for IPv4 requests"),
+	OPT_WITHOUT_ARG("--api-ipv6",
+			opt_set_bool, &opt_api_listen_v6,
+			"Limit API (if enabled) to only listen for IPv6 requests"),
 	OPT_WITH_ARG("--api-port",
 		     set_int_1_to_65535, opt_show_intval, &opt_api_port,
 		     "Port number of miner API"),
@@ -2584,6 +2592,8 @@ void kill_work(void)
 
 	disable_curses();
 	applog(LOG_INFO, "Received kill message");
+	if (thr_info == NULL)
+		return; /* not even initialized */
 
 	if (opt_debug)
 		applog(LOG_DEBUG, "Killing off watchdog thread");
@@ -5920,6 +5930,9 @@ int main (int argc, char *argv[])
 		load_default_config();
 
 	opt_parse(&argc, argv, applog_and_exit);
+	if (opt_api_listen_v4 && opt_api_listen_v6)
+		quit(1, "Options '-4' and '-6' are mutually exclusive");
+
 	if (argc != 1)
 		quit(1, "Unexpected extra commandline arguments");
 
