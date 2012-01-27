@@ -185,7 +185,7 @@ void display(char *buf)
 	}
 }
 
-int callapi(char *command, char *host, short int port)
+int callapi(const char *command, const char *host, const char *port)
 {
 	char buf[RECVSIZE+1];
 	struct hostent *ip;
@@ -193,26 +193,54 @@ int callapi(char *command, char *host, short int port)
 	SOCKETTYPE sock;
 	int ret = 0;
 	int n, p;
+	struct addrinfo hints;
+	struct addrinfo *res;
+	struct addrinfo *ai;
+	char *errstr = NULL;
 
 	SOCKETINIT;
 
-	ip = gethostbyname(host);
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_ADDRCONFIG;
+	
+	ret = getaddrinfo(host, port, &hints, &res);
+	if (ret) {
+		printf("Resolving %s:%s: failed: %s\n", host, port, gai_strerror(ret));
+		return 1;
+	}
 
-	sock = socket(AF_INET, SOCK_STREAM, 0);
+	/* Loop through the possible addresses. The first one is preferred,
+	 * whatever that means, so errstr gets (a copy of) the first error we
+	 * encounter. */
+	for(ai = res; ai; ai = ai->ai_next) {
+		sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+		if (sock == INVSOCK)
+			continue;
+
+		if (SOCKETFAIL(connect(sock,ai->ai_addr, ai->ai_addrlen))) {
+			if (errstr == NULL)
+				errstr = strdup(SOCKERRMSG);
+			CLOSESOCKET(sock);
+			sock = INVSOCK;
+			continue;
+		}
+
+		break;
+	}
+
+	if (res)
+		freeaddrinfo(res);
+
 	if (sock == INVSOCK) {
-		printf("Socket initialisation failed: %s\n", SOCKERRMSG);
+		if (errstr == NULL)
+			errstr = strdup(SOCKERRMSG);
+		printf("Could not connect to %s:%s: %s\n", host,port, errstr);
+		free(errstr);
 		return 1;
 	}
-
-	memset(&serv, 0, sizeof(serv));
-	serv.sin_family = AF_INET;
-	serv.sin_addr = *((struct in_addr *)ip->h_addr);
-	serv.sin_port = htons(port);
-
-	if (SOCKETFAIL(connect(sock, (struct sockaddr *)&serv, sizeof(struct sockaddr)))) {
-		printf("Socket connect failed: %s\n", SOCKERRMSG);
-		return 1;
-	}
+	if (errstr)
+		free(errstr);
 
 	n = send(sock, command, strlen(command), 0);
 	if (SOCKETFAIL(n)) {
@@ -266,9 +294,9 @@ static char *trim(char *str)
 
 int main(int argc, char *argv[])
 {
-	char *command = "summary";
-	char *host = "127.0.0.1";
-	short int port = 4028;
+	const char *command = "summary";
+	const char *host = "127.0.0.1";
+	const char *port = "4028";
 	char *ptr;
 
 	if (argc > 1)
@@ -294,7 +322,7 @@ int main(int argc, char *argv[])
 	if (argc > 3) {
 		ptr = trim(argv[3]);
 		if (strlen(ptr) > 0)
-			port = atoi(ptr);
+			port = ptr;
 	}
 
 	return callapi(command, host, port);

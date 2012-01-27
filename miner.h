@@ -444,6 +444,8 @@ extern bool use_curses;
 extern char *opt_api_description;
 extern int opt_api_port;
 extern bool opt_api_listen;
+extern bool opt_api_listen_v4;
+extern bool opt_api_listen_v6;
 extern bool opt_api_network;
 extern bool opt_delaynet;
 

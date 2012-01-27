@@ -1211,15 +1211,14 @@ void api(void)
 {
 	char buf[BUFSIZ];
 	char param_buf[BUFSIZ];
-	const char *localaddr = "127.0.0.1";
 	SOCKETTYPE c;
 	int n, bound;
 	char *connectaddr;
 	char *binderror;
 	time_t bindstart;
 	short int port = opt_api_port;
-	struct sockaddr_in serv;
-	struct sockaddr_in cli;
+	struct sockaddr_storage serv;
+	struct sockaddr_storage cli;
 	socklen_t clisiz;
 	char *cmd;
 	char *param;
@@ -1239,25 +1238,36 @@ void api(void)
 		return;
 	}
 
-	sock = socket(AF_INET, SOCK_STREAM, 0);
+	if(opt_api_listen_v4)
+		sock = socket(PF_INET, SOCK_STREAM, 0);
+	else
+		sock = socket(PF_INET6, SOCK_STREAM, 0);
+
 	if (sock == INVSOCK) {
 		applog(LOG_ERR, "API1 initialisation failed (%s)%s", SOCKERRMSG, UNAVAILABLE);
 		return;
 	}
+	if(!opt_api_listen_v4) {
+		int v6_only = opt_api_listen_v6;
+		setsockopt(sock,IPPROTO_IPV6,IPV6_V6ONLY,(char *)&v6_only,sizeof(v6_only));
+	}
 
 	memset(&serv, 0, sizeof(serv));
 
-	serv.sin_family = AF_INET;
-
 	if (!opt_api_network) {
-		serv.sin_addr.s_addr = inet_addr(localaddr);
-		if (serv.sin_addr.s_addr == INVINETADDR) {
-			applog(LOG_ERR, "API2 initialisation failed (%s)%s", SOCKERRMSG, UNAVAILABLE);
-			return;
-		}
+		if (opt_api_listen_v4)
+			((struct sockaddr_in *)&serv)->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		else
+			((struct sockaddr_in6 *)&serv)->sin6_addr = in6addr_loopback;
 	}
 
-	serv.sin_port = htons(port);
+	if (opt_api_listen_v4) {
+		serv.ss_family = AF_INET;
+		((struct sockaddr_in *)&serv)->sin_port = htons(port);
+	} else {
+		serv.ss_family = AF_INET6;
+		((struct sockaddr_in6 *)&serv)->sin6_port = htons(port);
+	}
 
 	// try for more than 1 minute ... in case the old one hasn't completely gone yet
 	bound = 0;
@@ -1268,7 +1278,7 @@ void api(void)
 			if ((time(NULL) - bindstart) > 61)
 				break;
 			else {
-				applog(LOG_WARNING, "API bind to port %d failed - trying again in 15sec", port);
+				applog(LOG_WARNING, "API bind to port %d failed (%m) - trying again in 15sec", port);
 				sleep(15);
 			}
 		}
@@ -1302,17 +1312,26 @@ void api(void)
 			goto die;
 		}
 
-		if (opt_api_network)
-			addrok = true;
-		else {
-			connectaddr = inet_ntoa(cli.sin_addr);
-			addrok = (strcmp(connectaddr, localaddr) == 0);
+		addrok = true;
+		if (!opt_api_network && opt_api_listen_v4) {
+			/* TODO: Can that even happen? */
+			/* TODO: This is not thread safe */
+			connectaddr = inet_ntoa(((struct sockaddr_in *)&cli)->sin_addr);
+			addrok = (strcmp(connectaddr, "127.0.0.1") == 0);
 		}
 
 		if (opt_debug) {
-			connectaddr = inet_ntoa(cli.sin_addr);
-			applog(LOG_DEBUG, "DBG: connection from %s - %s", connectaddr, addrok ? "Accepted" : "Ignored");
+			char connectadr[30];
+			const char *adrp;
+			
+			if(cli.ss_family == AF_INET)
+				adrp = inet_ntop(cli.ss_family, &((struct sockaddr_in *)&cli)->sin_addr, connectaddr,sizeof(connectaddr));
+			else
+				adrp = inet_ntop(cli.ss_family, &((struct sockaddr_in6 *)&cli)->sin6_addr, connectaddr,sizeof(connectaddr));
+
+			applog(LOG_DEBUG, "DBG: connection from %s - %s", adrp, "Accepted");
 		}
+
 
 		if (addrok) {
 			n = recv(c, &buf[0], BUFSIZ-1, 0);
